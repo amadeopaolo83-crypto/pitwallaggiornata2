@@ -66,7 +66,12 @@
   details{color:var(--muted);font-size:12px;}
   details input{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px 8px;width:220px;}
 
-  /* ---------- AUTO VIEW ---------- */
+  #changeRoleBtn{
+    position:fixed;top:8px;left:8px;z-index:70;
+    background:rgba(20,23,26,.7);color:var(--muted);border:1px solid var(--line);
+    border-radius:8px;padding:6px 10px;font-size:11px;font-family:'Inter',sans-serif;
+  }
+  #boxView #changeRoleBtn{ position:static;display:inline-block;margin-bottom:14px; }
   #autoView{
     position:fixed;inset:0;display:flex;flex-direction:column;
     background:var(--bg);
@@ -161,6 +166,7 @@
 
 <!-- ============ AUTO VIEW ============ -->
 <div id="autoView" hidden>
+  <button id="changeRoleBtn" onclick="resetRole()">◄ cambia</button>
   <div class="timing-strip">
     <span id="timingPos">POS —</span>
     <span class="gap" id="timingGap">—</span>
@@ -186,6 +192,7 @@
     <h2>PitComm · Box</h2>
     <span class="code-pill" id="boxCodePill">—</span>
   </div>
+  <button id="changeRoleBtn" onclick="resetRole()">◄ cambia ruolo / codice</button>
   <div class="card">
     <h3>Notifiche</h3>
     <span class="mono" id="pushStatus" style="font-size:12px;color:var(--muted);">In attivazione…</span>
@@ -582,6 +589,14 @@ function addLog(m){
   log.prepend(div);
   if(navigator.vibrate) navigator.vibrate([40,40,40]);
   playAlertBeep();
+}
+
+function resetRole(){
+  if(socket) socket.disconnect();
+  localStorage.removeItem('pc_code');
+  localStorage.removeItem('pc_role');
+  localStorage.removeItem('pc_server');
+  location.reload();
 }
 
 // ---------- AUTO RECONNECT ----------
