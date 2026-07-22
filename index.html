@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<title>PitComm</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#0B0D0F" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<style>
+  :root{
+    --bg:#0B0D0F;
+    --panel:#14171A;
+    --panel-2:#1C2024;
+    --line:#262B30;
+    --text:#E9EDEF;
+    --muted:#8A9199;
+    --yellow:#F5C518;
+    --red:#E63946;
+    --green:#3ECF6E;
+    --cyan:#2FB6C4;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:'Inter',sans-serif;
+    -webkit-user-select:none;user-select:none;
+    overscroll-behavior:none;
+  }
+  h1,h2,h3,.display{font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.04em;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+  [hidden]{display:none!important;}
+  button{font-family:inherit;cursor:pointer;}
+  input,select{font-family:inherit;}
+
+  /* ---------- LANDING ---------- */
+  #landing{
+    min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:24px;gap:28px;text-align:center;
+    background:
+      radial-gradient(circle at 50% -10%, #1a1e22 0%, var(--bg) 60%);
+  }
+  .brand{display:flex;align-items:baseline;gap:10px;}
+  .brand .mark{width:14px;height:14px;background:var(--yellow);border-radius:2px;box-shadow:0 0 18px var(--yellow);}
+  .brand h1{font-size:28px;margin:0;color:var(--text);}
+  .brand span{color:var(--muted);font-family:'JetBrains Mono',monospace;font-size:13px;}
+  #landing label{display:block;font-size:12px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px;}
+  #teamCode{
+    width:260px;max-width:70vw;text-align:center;font-family:'JetBrains Mono',monospace;font-size:26px;
+    letter-spacing:.2em;background:var(--panel);border:1px solid var(--line);color:var(--yellow);
+    border-radius:10px;padding:14px 10px;text-transform:uppercase;
+  }
+  #teamCode:focus{outline:none;border-color:var(--yellow);}
+  .role-row{display:flex;gap:16px;}
+  .role-btn{
+    width:150px;padding:22px 10px;border-radius:14px;border:1px solid var(--line);
+    background:var(--panel);color:var(--text);font-family:'Oswald',sans-serif;font-size:20px;
+    letter-spacing:.05em;text-transform:uppercase;transition:.15s;
+  }
+  .role-btn:active{transform:scale(.96);}
+  .role-btn.box{border-color:var(--cyan);}
+  .role-btn.auto{border-color:var(--yellow);}
+  .role-btn small{display:block;font-family:'Inter',sans-serif;color:var(--muted);font-size:11px;text-transform:none;letter-spacing:0;margin-top:4px;}
+  details{color:var(--muted);font-size:12px;}
+  details input{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:6px 8px;width:220px;}
+
+  /* ---------- AUTO VIEW ---------- */
+  #autoView{
+    position:fixed;inset:0;display:flex;flex-direction:column;
+    background:var(--bg);
+  }
+  body.night #autoView{ background:#000; }
+  body.night #autoView .fuel-shell, body.night .quick-btn{ filter:brightness(.8); }
+
+  .fuel-shell{padding:14px 18px 6px;}
+  .fuel-label{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);margin-bottom:6px;}
+  .fuel-track{height:26px;border-radius:6px;background:var(--panel-2);border:1px solid var(--line);overflow:hidden;}
+  .fuel-fill{height:100%;transition:width .6s ease, background-color .6s ease;}
+
+  .timing-strip{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:6px 18px;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);
+    border-bottom:1px solid var(--line);
+  }
+  .timing-strip .gap{color:var(--yellow);font-size:16px;font-weight:700;}
+
+  .quick-grid{
+    flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;
+    gap:12px;padding:12px 18px 18px;
+  }
+  .quick-btn{
+    border-radius:16px;border:2px solid transparent;color:#0B0D0F;
+    font-family:'Oswald',sans-serif;font-size:clamp(20px,4vw,34px);text-transform:uppercase;
+    display:flex;align-items:center;justify-content:center;text-align:center;padding:8px;
+    transition:transform .08s, box-shadow .2s;
+  }
+  .quick-btn:active{transform:scale(.97);}
+  .quick-btn.flashing{box-shadow:0 0 0 6px #fff inset, 0 0 40px #fff; animation:pulseSend .4s ease;}
+  @keyframes pulseSend{0%{filter:brightness(1.6)}100%{filter:brightness(1)}}
+
+  #flashOverlay{
+    position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    padding:6vw;text-align:center;z-index:50;
+  }
+  #flashOverlay .txt{font-family:'Oswald',sans-serif;font-size:clamp(32px,8vw,90px);color:#0B0D0F;text-transform:uppercase;line-height:1.05;}
+
+  #rotateHint{
+    position:fixed;inset:0;background:var(--bg);color:var(--text);display:flex;
+    flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:60;
+  }
+
+  /* ---------- BOX VIEW ---------- */
+  #boxView{min-height:100dvh;padding:18px 16px 60px;max-width:640px;margin:0 auto;}
+  .box-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;}
+  .box-header h2{margin:0;font-size:20px;}
+  .code-pill{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--yellow);border:1px solid var(--line);border-radius:20px;padding:4px 12px;}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;}
+  .card h3{margin:0 0 12px;font-size:14px;color:var(--muted);}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;}
+  .row:last-child{margin-bottom:0;}
+  .toggle{position:relative;width:50px;height:28px;background:var(--panel-2);border-radius:20px;border:1px solid var(--line);}
+  .toggle input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;}
+  .toggle .knob{position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:var(--muted);transition:.2s;}
+  .toggle input:checked + .knob{left:24px;background:var(--yellow);}
+  input[type=range]{flex:1;accent-color:var(--yellow);}
+  input[type=number], input[type=text]{
+    background:var(--panel-2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:8px 10px;width:100%;
+  }
+  input[type=color]{width:38px;height:34px;border:none;border-radius:8px;background:none;padding:0;}
+  .qb-row{display:grid;grid-template-columns:1fr 44px;gap:8px;margin-bottom:8px;align-items:center;}
+  .flash-row{display:grid;grid-template-columns:1fr 44px 60px auto;gap:8px;margin-bottom:8px;align-items:center;}
+  .flash-row input[type=number]{width:60px;}
+  .btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 14px;font-size:13px;}
+  .btn.primary{background:var(--yellow);color:#0B0D0F;border-color:var(--yellow);font-weight:600;}
+  .btn.small{padding:8px 10px;font-size:12px;}
+  #log{max-height:200px;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:6px;}
+  .log-item{font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--panel-2);border-radius:8px;padding:8px 10px;display:flex;justify-content:space-between;}
+  .log-item .t{color:var(--muted);}
+</style>
+</head>
+<body>
+
+<!-- ============ LANDING ============ -->
+<div id="landing">
+  <div class="brand"><span class="mark"></span><h1>PitComm</h1><span>box &lt;&gt; auto</span></div>
+  <div>
+    <label for="teamCode">Codice team</label>
+    <input id="teamCode" maxlength="8" placeholder="ES. GARA24" autocomplete="off" autocapitalize="characters" />
+  </div>
+  <div class="role-row">
+    <button class="role-btn box" onclick="joinAs('box')">Box<small>controllo &amp; impostazioni</small></button>
+    <button class="role-btn auto" onclick="joinAs('auto')">Auto<small>schermo in pista</small></button>
+  </div>
+  <details>
+    <summary>Server</summary>
+    <input id="serverUrl" placeholder="https://tuo-server.com" />
+  </details>
+</div>
+
+<!-- ============ AUTO VIEW ============ -->
+<div id="autoView" hidden>
+  <div class="timing-strip">
+    <span id="timingPos">POS —</span>
+    <span class="gap" id="timingGap">—</span>
+    <span id="timingNote">&nbsp;</span>
+  </div>
+  <div class="fuel-shell">
+    <div class="fuel-label"><span>CARBURANTE</span><span id="fuelPct">100%</span></div>
+    <div class="fuel-track"><div class="fuel-fill" id="fuelFill" style="width:100%;background:#3ECF6E;"></div></div>
+  </div>
+  <div class="quick-grid" id="quickGrid"></div>
+</div>
+
+<div id="flashOverlay" hidden><div class="txt" id="flashText"></div></div>
+
+<div id="rotateHint" hidden>
+  <div class="display" style="font-size:22px;">Ruota il telefono in orizzontale</div>
+  <div style="color:var(--muted);font-size:13px;">lo schermo deve restare bloccato in landscape</div>
+</div>
+
+<!-- ============ BOX VIEW ============ -->
+<div id="boxView" hidden>
+  <div class="box-header">
+    <h2>PitComm · Box</h2>
+    <span class="code-pill" id="boxCodePill">—</span>
+  </div>
+
+  <div class="card">
+    <h3>Schermo auto</h3>
+    <div class="row"><span>Modalità notte</span>
+      <label class="toggle"><input type="checkbox" id="dayModeToggle" onchange="sendDayMode()"><span class="knob"></span></label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Carburante &amp; autonomia</h3>
+    <div class="row"><span class="mono" id="fuelValLabel">Livello: 100%</span></div>
+    <div class="row"><input type="range" id="fuelSlider" min="0" max="100" value="100" oninput="onFuelSlider()"></div>
+    <div class="row"><span class="mono" id="autonomyValLabel">Autonomia: 60 min</span></div>
+    <div class="row"><input type="range" id="autonomySlider" min="0" max="180" value="60" oninput="onAutonomySlider()"></div>
+  </div>
+
+  <div class="card">
+    <h3>Distacchi (live timing)</h3>
+    <div class="row"><input type="number" id="timingPosInput" placeholder="Posizione"></div>
+    <div class="row"><input type="text" id="timingGapInput" placeholder="Distacco es. +1.2s"></div>
+    <div class="row"><button class="btn primary" style="width:100%" onclick="sendTiming()">Invia distacco all'auto</button></div>
+  </div>
+
+  <div class="card">
+    <h3>Pulsanti rapidi auto (4)</h3>
+    <div id="qbEditor"></div>
+    <button class="btn" onclick="saveQuickButtons()">Salva pulsanti</button>
+  </div>
+
+  <div class="card">
+    <h3>Messaggi a schermo intero</h3>
+    <div id="flashEditor"></div>
+    <button class="btn small" onclick="addFlashPreset()">+ aggiungi preset</button>
+  </div>
+
+  <div class="card">
+    <h3>Messaggi ricevuti dall'auto</h3>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let socket, code, role;
+let wakeLockRef = null;
+
+const DEFAULT_QB = [
+  {id:1,label:'Box',color:'#3fa9f5'},
+  {id:2,label:'Rifornimento',color:'#f5a623'},
+  {id:3,label:'Pilota',color:'#7ed321'},
+  {id:4,label:'Ripeti',color:'#bd10e0'},
+];
+const DEFAULT_FLASH = [
+  {text:'BOX QUESTO GIRO', color:'#F5C518', duration:8},
+  {text:'PUSH', color:'#E63946', duration:6},
+  {text:'TUTTO OK', color:'#3ECF6E', duration:6},
+];
+
+let quickButtons = load('pc_qb', DEFAULT_QB);
+let flashPresets = load('pc_flash', DEFAULT_FLASH);
+
+function load(key, fallback){
+  try{ const v = JSON.parse(localStorage.getItem(key)); return v || fallback; }catch(e){ return fallback; }
+}
+function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+
+// ---------- JOIN ----------
+function joinAs(chosenRole){
+  const codeVal = $('teamCode').value.trim().toUpperCase();
+  if(!codeVal){ $('teamCode').focus(); return; }
+  code = codeVal;
+  role = chosenRole;
+  const serverUrl = $('serverUrl').value.trim() || location.origin;
+  localStorage.setItem('pc_code', code);
+  localStorage.setItem('pc_role', role);
+  localStorage.setItem('pc_server', serverUrl);
+  connect(serverUrl);
+}
+
+function connect(serverUrl){
+  socket = io(serverUrl, { transports:['websocket','polling'] });
+  socket.on('connect', () => {
+    socket.emit('join', { code, role }, (res) => {
+      if(!res || !res.ok) return;
+      applyState(res.state);
+      $('landing').hidden = true;
+      if(role === 'auto') enterAutoView(); else enterBoxView();
+    });
+  });
+  registerListeners();
+}
+
+function applyState(state){
+  if(state.quickButtons) quickButtons = state.quickButtons;
+  document.body.classList.toggle('night', !state.dayMode);
+  if($('fuelSlider')) $('fuelSlider').value = state.fuel.percent;
+  if($('autonomySlider')) $('autonomySlider').value = state.autonomyMinutes;
+  if($('dayModeToggle')) $('dayModeToggle').checked = !state.dayMode;
+  renderFuel(state.fuel.percent);
+  if(state.timing) renderTiming(state.timing);
+  renderQuickGrid();
+  renderQbEditor();
+  renderFlashEditor();
+}
+
+function registerListeners(){
+  socket.on('quickMessageReceived', (m) => addLog(m));
+  socket.on('flashMessage', (m) => { if(role==='auto') showFlash(m); });
+  socket.on('fuelUpdate', (f) => { renderFuel(f.percent); if($('fuelSlider')) $('fuelSlider').value = f.percent; if($('fuelValLabel')) $('fuelValLabel').textContent = 'Livello: '+f.percent+'%'; });
+  socket.on('autonomyUpdate', (a) => { if($('autonomySlider')) $('autonomySlider').value = a.minutes; if($('autonomyValLabel')) $('autonomyValLabel').textContent = 'Autonomia: '+a.minutes+' min'; });
+  socket.on('dayModeUpdate', (d) => { document.body.classList.toggle('night', !d.dayMode); if($('dayModeToggle')) $('dayModeToggle').checked = !d.dayMode; });
+  socket.on('quickButtonsUpdate', (q) => { quickButtons = q.buttons; renderQuickGrid(); renderQbEditor(); });
+  socket.on('timingUpdate', renderTiming);
+}
+
+// ---------- AUTO VIEW ----------
+async function enterAutoView(){
+  $('autoView').hidden = false;
+  renderQuickGrid();
+  try{ await document.documentElement.requestFullscreen(); }catch(e){}
+  try{ await screen.orientation.lock('landscape'); }catch(e){ checkOrientation(); }
+  window.addEventListener('resize', checkOrientation);
+  checkOrientation();
+  requestWakeLock();
+  document.addEventListener('visibilitychange', () => { if(document.visibilityState==='visible') requestWakeLock(); });
+}
+function checkOrientation(){
+  $('rotateHint').hidden = window.innerWidth > window.innerHeight;
+}
+async function requestWakeLock(){
+  try{ wakeLockRef = await navigator.wakeLock.request('screen'); }catch(e){ /* non supportato o negato */ }
+}
+
+function renderFuel(percent){
+  $('fuelPct') && ($('fuelPct').textContent = percent + '%');
+  const fill = $('fuelFill');
+  if(!fill) return;
+  fill.style.width = percent + '%';
+  const hue = Math.max(0, Math.min(120, percent * 1.2)); // 100%=verde(120), 0%=rosso(0)
+  fill.style.background = `hsl(${hue}, 75%, 48%)`;
+}
+function renderTiming(t){
+  if(!t) return;
+  if($('timingPos')) $('timingPos').textContent = 'POS ' + (t.position ?? '—');
+  if($('timingGap')) $('timingGap').textContent = t.gap ?? '—';
+  if($('timingNote')) $('timingNote').textContent = t.note ?? '';
+}
+
+function renderQuickGrid(){
+  const grid = $('quickGrid');
+  if(!grid) return;
+  grid.innerHTML = '';
+  quickButtons.forEach(b => {
+    const btn = document.createElement('button');
+    btn.className = 'quick-btn';
+    btn.style.background = b.color;
+    btn.textContent = b.label;
+    btn.onclick = () => sendQuick(b);
+    grid.appendChild(btn);
+  });
+}
+function sendQuick(b){
+  socket.emit('quickMessage', { buttonId: b.id, label: b.label });
+  event.target.classList.add('flashing');
+  setTimeout(()=>event.target.classList.remove('flashing'), 400);
+  if(navigator.vibrate) navigator.vibrate(60);
+}
+
+function showFlash(m){
+  const ov = $('flashOverlay');
+  ov.style.background = m.color;
+  $('flashText').textContent = m.text;
+  ov.hidden = false;
+  try{
+    const u = new SpeechSynthesisUtterance(m.text);
+    u.lang = 'it-IT';
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  }catch(e){}
+  clearTimeout(showFlash._t);
+  showFlash._t = setTimeout(()=>{ ov.hidden = true; }, (m.durationSeconds||6)*1000);
+}
+
+// ---------- BOX VIEW ----------
+function enterBoxView(){
+  $('boxView').hidden = false;
+  $('boxCodePill').textContent = code;
+  renderQbEditor();
+  renderFlashEditor();
+}
+function sendDayMode(){ socket.emit('dayModeUpdate', { dayMode: !$('dayModeToggle').checked }); }
+function onFuelSlider(){
+  const v = +$('fuelSlider').value;
+  $('fuelValLabel').textContent = 'Livello: '+v+'%';
+  socket.emit('fuelUpdate', { percent: v });
+}
+function onAutonomySlider(){
+  const v = +$('autonomySlider').value;
+  $('autonomyValLabel').textContent = 'Autonomia: '+v+' min';
+  socket.emit('autonomyUpdate', { minutes: v });
+}
+function sendTiming(){
+  socket.emit('timingUpdate', {
+    position: $('timingPosInput').value ? +$('timingPosInput').value : null,
+    gap: $('timingGapInput').value,
+    note: ''
+  });
+}
+
+function renderQbEditor(){
+  const el = $('qbEditor');
+  if(!el) return;
+  el.innerHTML = '';
+  quickButtons.forEach((b, i) => {
+    const row = document.createElement('div');
+    row.className = 'qb-row';
+    row.innerHTML = `
+      <input type="text" value="${b.label}" oninput="quickButtons[${i}].label=this.value">
+      <input type="color" value="${b.color}" oninput="quickButtons[${i}].color=this.value">`;
+    el.appendChild(row);
+  });
+}
+function saveQuickButtons(){
+  save('pc_qb', quickButtons);
+  socket.emit('quickButtonsUpdate', { buttons: quickButtons });
+}
+
+function renderFlashEditor(){
+  const el = $('flashEditor');
+  if(!el) return;
+  el.innerHTML = '';
+  flashPresets.forEach((p, i) => {
+    const row = document.createElement('div');
+    row.className = 'flash-row';
+    row.innerHTML = `
+      <input type="text" value="${p.text}" oninput="flashPresets[${i}].text=this.value">
+      <input type="color" value="${p.color}" oninput="flashPresets[${i}].color=this.value">
+      <input type="number" value="${p.duration}" min="2" max="60" oninput="flashPresets[${i}].duration=+this.value" title="secondi">
+      <button class="btn small primary" onclick="sendFlashPreset(${i})">Invia</button>`;
+    el.appendChild(row);
+  });
+}
+function addFlashPreset(){
+  flashPresets.push({text:'NUOVO MESSAGGIO', color:'#2FB6C4', duration:6});
+  save('pc_flash', flashPresets);
+  renderFlashEditor();
+}
+function sendFlashPreset(i){
+  save('pc_flash', flashPresets);
+  const p = flashPresets[i];
+  socket.emit('flashMessage', { text: p.text, color: p.color, durationSeconds: p.duration });
+}
+
+function addLog(m){
+  const log = $('log');
+  if(!log) return;
+  const div = document.createElement('div');
+  div.className = 'log-item';
+  const time = new Date(m.at).toLocaleTimeString('it-IT');
+  div.innerHTML = `<span>${m.label}</span><span class="t">${time}</span>`;
+  log.prepend(div);
+  if(navigator.vibrate) navigator.vibrate([40,40,40]);
+}
+
+// ---------- AUTO RECONNECT ----------
+window.addEventListener('load', () => {
+  const savedCode = localStorage.getItem('pc_code');
+  const savedRole = localStorage.getItem('pc_role');
+  const savedServer = localStorage.getItem('pc_server');
+  if(savedCode && savedRole && savedServer){
+    code = savedCode; role = savedRole;
+    connect(savedServer);
+  }
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "PitComm - Box/Auto",
+  "short_name": "PitComm",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0B0D0F",
+  "theme_color": "#0B0D0F",
+  "icons": []
+}
