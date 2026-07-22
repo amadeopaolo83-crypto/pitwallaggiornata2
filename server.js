@@ -6,10 +6,22 @@
 
 const { Server } = require("socket.io");
 const http = require("http");
+const webpush = require("web-push");
 
 const PORT = process.env.PORT || 3000;
 
+// Chiavi VAPID per le notifiche push: impostale come variabili d'ambiente
+// su Render (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY). Il fallback qui sotto
+// funziona subito ma è meglio spostarlo su env var in produzione.
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "BDL1U-RB9YWSWMNoB6_u7gjFrMAlIYkD4hkDFt_ZaauQw8k3OVCTYxfzsHaFSNDaDOSRPxToO3Va4lWbCzNK00M";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "1Gzw3jN-k4GS-SYzXWiJqvGH5j4cie9-gVBjvOIL7tI";
+webpush.setVapidDetails("mailto:pitcomm@example.com", VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+
 const httpServer = http.createServer((req, res) => {
+  if (req.url === "/vapid-public-key") {
+    res.writeHead(200, { "Content-Type": "text/plain" });
+    return res.end(VAPID_PUBLIC_KEY);
+  }
   res.writeHead(200, { "Content-Type": "text/plain" });
   res.end("PitComm server attivo\n");
 });
@@ -36,9 +48,25 @@ function getRoomState(code) {
       ],
       timing: null, // { gap: "+1.2s", position: 3, updatedAt }
       lastFlash: null,
+      pushSubscriptions: [], // sottoscrizioni push dei dispositivi box di questa stanza
     });
   }
   return rooms.get(code);
+}
+
+function notifyBoxDevices(code, label) {
+  const state = getRoomState(code);
+  const payload = JSON.stringify({
+    title: "Messaggio dall'auto",
+    body: label,
+  });
+  state.pushSubscriptions = state.pushSubscriptions.filter((sub) => {
+    webpush.sendNotification(sub, payload).catch((err) => {
+      // 404/410 = sottoscrizione non più valida (browser disinstallato, permesso revocato, ecc.)
+      if (err.statusCode === 404 || err.statusCode === 410) return false;
+    });
+    return true; // rimozione effettiva gestita al prossimo giro se serve
+  });
 }
 
 io.on("connection", (socket) => {
@@ -56,6 +84,14 @@ io.on("connection", (socket) => {
     ack && ack({ ok: true, state });
   });
 
+  // BOX -> server: registra la sottoscrizione push di questo dispositivo
+  socket.on("registerPush", ({ subscription }) => {
+    if (!joinedCode || !subscription) return;
+    const state = getRoomState(joinedCode);
+    const exists = state.pushSubscriptions.some((s) => s.endpoint === subscription.endpoint);
+    if (!exists) state.pushSubscriptions.push(subscription);
+  });
+
   // AUTO -> BOX: pressione di uno dei 4 pulsanti rapidi
   socket.on("quickMessage", ({ buttonId, label }) => {
     if (!joinedCode) return;
@@ -64,6 +100,7 @@ io.on("connection", (socket) => {
       label,
       at: Date.now(),
     });
+    notifyBoxDevices(joinedCode, label);
   });
 
   // BOX -> AUTO: messaggio a comparsa (testo, colore, durata) + lettura vocale

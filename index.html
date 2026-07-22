@@ -186,6 +186,10 @@
     <h2>PitComm · Box</h2>
     <span class="code-pill" id="boxCodePill">—</span>
   </div>
+  <div class="card">
+    <h3>Notifiche</h3>
+    <span class="mono" id="pushStatus" style="font-size:12px;color:var(--muted);">In attivazione…</span>
+  </div>
 
   <div class="card">
     <h3>Schermo auto</h3>
@@ -200,6 +204,15 @@
     <div class="row"><input type="range" id="fuelSlider" min="0" max="100" value="100" oninput="onFuelSlider()"></div>
     <div class="row"><span class="mono" id="autonomyValLabel">Autonomia: 60 min</span></div>
     <div class="row"><input type="range" id="autonomySlider" min="0" max="180" value="60" oninput="onAutonomySlider()"></div>
+    <div class="row" style="border-top:1px solid var(--line);padding-top:12px;">
+      <span class="mono" id="fuelTimerStatus">Consumo: fermo</span>
+    </div>
+    <div class="row"><input type="number" id="fullTankMinutes" placeholder="Durata pieno (min)" value="120"></div>
+    <div class="row" style="flex-wrap:wrap;gap:8px;">
+      <button class="btn primary" onclick="startFuelConsumption()">Avvia consumo</button>
+      <button class="btn" onclick="pauseFuelConsumption()">Pausa</button>
+      <button class="btn" onclick="refuelReset()">Rifornito (100%)</button>
+    </div>
   </div>
 
   <div class="card">
@@ -231,6 +244,54 @@
 const $ = id => document.getElementById(id);
 let socket, code, role;
 let wakeLockRef = null;
+const VAPID_PUBLIC_KEY = 'BDL1U-RB9YWSWMNoB6_u7gjFrMAlIYkD4hkDFt_ZaauQw8k3OVCTYxfzsHaFSNDaDOSRPxToO3Va4lWbCzNK00M';
+
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+function playAlertBeep(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = 880;
+    gain.gain.value = 0.15;
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    setTimeout(() => { osc.stop(); ctx.close(); }, 350);
+  }catch(e){}
+}
+
+async function setupPushNotifications(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  try{
+    const reg = await navigator.serviceWorker.ready;
+    const permission = await Notification.requestPermission();
+    if(permission !== 'granted'){
+      const el = $('pushStatus');
+      if(el) el.textContent = 'Notifiche non attive: permesso negato dal browser';
+      return;
+    }
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub){
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+    socket.emit('registerPush', { subscription: sub.toJSON() });
+    const el = $('pushStatus');
+    if(el) el.textContent = 'Notifiche attive su questo dispositivo';
+  }catch(e){
+    const el = $('pushStatus');
+    if(el) el.textContent = 'Notifiche non disponibili su questo browser';
+  }
+}
 
 const DEFAULT_QB = [
   {id:1,label:'Box',color:'#3fa9f5'},
@@ -246,6 +307,8 @@ const DEFAULT_FLASH = [
 
 let quickButtons = load('pc_qb', DEFAULT_QB);
 let flashPresets = load('pc_flash', DEFAULT_FLASH);
+let fuelTimer = load('pc_fuel_timer', { running:false, startedAt:null, startPercent:100, fullDurationMinutes:120 });
+let fuelTimerInterval = null;
 
 function load(key, fallback){
   try{ const v = JSON.parse(localStorage.getItem(key)); return v || fallback; }catch(e){ return fallback; }
@@ -375,12 +438,82 @@ function enterBoxView(){
   $('boxCodePill').textContent = code;
   renderQbEditor();
   renderFlashEditor();
+  initFuelTimerUI();
+  setupPushNotifications();
 }
 function sendDayMode(){ socket.emit('dayModeUpdate', { dayMode: !$('dayModeToggle').checked }); }
 function onFuelSlider(){
   const v = +$('fuelSlider').value;
   $('fuelValLabel').textContent = 'Livello: '+v+'%';
   socket.emit('fuelUpdate', { percent: v });
+  if(fuelTimer.running){
+    fuelTimer.running = false;
+    fuelTimer.startedAt = null;
+    fuelTimer.startPercent = v;
+    clearInterval(fuelTimerInterval);
+    save('pc_fuel_timer', fuelTimer);
+    updateFuelTimerStatus();
+  }
+}
+
+function initFuelTimerUI(){
+  if($('fullTankMinutes')) $('fullTankMinutes').value = fuelTimer.fullDurationMinutes;
+  updateFuelTimerStatus();
+  if(fuelTimer.running) resumeFuelTimerTick();
+}
+function currentComputedFuelPercent(){
+  if(!fuelTimer.running) return +$('fuelSlider').value;
+  const elapsedMin = (Date.now() - fuelTimer.startedAt) / 60000;
+  const pct = fuelTimer.startPercent - (elapsedMin / fuelTimer.fullDurationMinutes) * 100;
+  return Math.max(0, Math.round(pct));
+}
+function tickFuel(){
+  const pct = currentComputedFuelPercent();
+  $('fuelSlider').value = pct;
+  $('fuelValLabel').textContent = 'Livello: '+pct+'%';
+  socket.emit('fuelUpdate', { percent: pct });
+  if(pct <= 0) pauseFuelConsumption();
+}
+function resumeFuelTimerTick(){
+  clearInterval(fuelTimerInterval);
+  fuelTimerInterval = setInterval(tickFuel, 3000);
+  tickFuel();
+}
+function startFuelConsumption(){
+  fuelTimer.fullDurationMinutes = +$('fullTankMinutes').value || 120;
+  fuelTimer.startPercent = +$('fuelSlider').value;
+  fuelTimer.startedAt = Date.now();
+  fuelTimer.running = true;
+  save('pc_fuel_timer', fuelTimer);
+  updateFuelTimerStatus();
+  resumeFuelTimerTick();
+}
+function pauseFuelConsumption(){
+  const pct = currentComputedFuelPercent();
+  fuelTimer.running = false;
+  fuelTimer.startPercent = pct;
+  fuelTimer.startedAt = null;
+  clearInterval(fuelTimerInterval);
+  save('pc_fuel_timer', fuelTimer);
+  $('fuelSlider').value = pct;
+  $('fuelValLabel').textContent = 'Livello: '+pct+'%';
+  updateFuelTimerStatus();
+}
+function refuelReset(){
+  clearInterval(fuelTimerInterval);
+  fuelTimer.running = false;
+  fuelTimer.startedAt = null;
+  fuelTimer.startPercent = 100;
+  save('pc_fuel_timer', fuelTimer);
+  $('fuelSlider').value = 100;
+  $('fuelValLabel').textContent = 'Livello: 100%';
+  socket.emit('fuelUpdate', { percent: 100 });
+  updateFuelTimerStatus();
+}
+function updateFuelTimerStatus(){
+  const el = $('fuelTimerStatus');
+  if(!el) return;
+  el.textContent = 'Consumo: ' + (fuelTimer.running ? 'in corso' : 'fermo');
 }
 function onAutonomySlider(){
   const v = +$('autonomySlider').value;
@@ -448,6 +581,7 @@ function addLog(m){
   div.innerHTML = `<span>${m.label}</span><span class="t">${time}</span>`;
   log.prepend(div);
   if(navigator.vibrate) navigator.vibrate([40,40,40]);
+  playAlertBeep();
 }
 
 // ---------- AUTO RECONNECT ----------
