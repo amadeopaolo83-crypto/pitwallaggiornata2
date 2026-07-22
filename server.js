@@ -46,9 +46,17 @@ function getRoomState(code) {
         { id: 3, label: "Pilota", color: "#7ed321" },
         { id: 4, label: "Ripeti", color: "#bd10e0" },
       ],
-      timing: null, // { gap: "+1.2s", position: 3, updatedAt }
+      timing: null, // { position, gapAhead, gapBehind, updatedAt }
       lastFlash: null,
-      pushSubscriptions: [], // sottoscrizioni push dei dispositivi box di questa stanza
+      pushSubscriptions: [],
+      fuelSystem: {
+        tankCapacityLiters: 100,
+        currentLiters: 100,
+        consumptionRatePerHour: null,
+        onTrack: false,
+        sessionStartAt: null,
+        sessionStartLiters: 0,
+      },
     });
   }
   return rooms.get(code);
@@ -111,6 +119,14 @@ io.on("connection", (socket) => {
     io.to(joinedCode).emit("flashMessage", state.lastFlash);
   });
 
+  // BOX -> tutti i box: sincronizza capienza, litri, consumo, stato in pista/ai box
+  socket.on("fuelSystemUpdate", (fuelSystem) => {
+    if (!joinedCode) return;
+    const state = getRoomState(joinedCode);
+    state.fuelSystem = fuelSystem;
+    io.to(joinedCode).emit("fuelSystemUpdate", state.fuelSystem);
+  });
+
   // BOX -> AUTO: aggiornamento consumo carburante (percentuale 0-100)
   socket.on("fuelUpdate", ({ percent }) => {
     if (!joinedCode) return;
@@ -143,11 +159,11 @@ io.on("connection", (socket) => {
     io.to(joinedCode).emit("quickButtonsUpdate", { buttons });
   });
 
-  // BOX -> AUTO: distacchi dal live timing (inseriti manualmente per ora)
-  socket.on("timingUpdate", ({ gap, position, note }) => {
+  // BOX -> AUTO: distacchi dal live timing (posizione, distacco davanti, distacco dietro)
+  socket.on("timingUpdate", ({ position, gapAhead, gapBehind }) => {
     if (!joinedCode) return;
     const state = getRoomState(joinedCode);
-    state.timing = { gap, position, note, updatedAt: Date.now() };
+    state.timing = { position, gapAhead, gapBehind, updatedAt: Date.now() };
     io.to(joinedCode).emit("timingUpdate", state.timing);
   });
 

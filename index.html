@@ -86,9 +86,9 @@
   .fuel-fill{height:100%;transition:width .6s ease, background-color .6s ease;}
 
   .timing-strip{
-    display:flex;justify-content:space-between;align-items:center;
-    padding:6px 18px;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--muted);
-    border-bottom:1px solid var(--line);
+    display:flex;justify-content:center;align-items:center;
+    padding:8px 18px;font-family:'JetBrains Mono',monospace;
+    border-bottom:1px solid var(--line);gap:clamp(20px,6vw,60px);
   }
   .timing-strip .gap{color:var(--yellow);font-size:16px;font-weight:700;}
 
@@ -208,23 +208,37 @@
   </div>
 
   <div class="card">
-    <h3>Carburante &amp; autonomia (stima automatica)</h3>
+    <h3>Carburante &amp; autonomia</h3>
     <div class="row"><span class="mono" id="fuelValLabel">Livello: 100%</span></div>
-    <div class="row"><input type="range" id="fuelSlider" min="0" max="100" value="100" oninput="onFuelSlider()"></div>
-    <div class="row" style="border-top:1px solid var(--line);padding-top:12px;">
-      <span class="mono" id="fuelTimerStatus">Stint: fermo</span>
-    </div>
-    <div class="row"><span class="mono" id="rateLabel" style="font-size:12px;">Consumo stimato: non ancora calibrato</span></div>
-    <div class="row"><input type="number" id="knownRateLph" placeholder="Consumo già noto (L/ora)" step="0.1"></div>
-    <div class="row"><button class="btn" style="width:100%" onclick="setKnownRate()">Imposta consumo noto</button></div>
-    <div class="row"><input type="number" id="stintLiters" placeholder="Litri nel serbatoio ora (es. 80)"></div>
-    <div class="row" style="flex-wrap:wrap;gap:8px;">
-      <button class="btn primary" onclick="startFuelStint()">Avvia stint</button>
-      <button class="btn" onclick="pauseFuelStint()">Pausa</button>
-      <button class="btn" onclick="markDryAndCalibrate()">Serbatoio a secco ora</button>
-    </div>
-    <div class="row"><span class="mono" id="litersRemainingLabel" style="font-size:12px;">Litri stimati rimanenti: —</span></div>
+    <div class="row"><span class="mono" id="litersNowLabel" style="font-size:12px;">Litri in serbatoio: —</span></div>
     <div class="row"><span class="mono" id="autonomyLiveLabel" style="font-size:12px;">Autonomia stimata: —</span></div>
+
+    <div class="row" style="border-top:1px solid var(--line);padding-top:12px;">
+      <span class="mono" id="trackStatusLabel">Stato: ai box</span>
+    </div>
+    <div class="row" style="flex-wrap:wrap;gap:8px;">
+      <button class="btn primary" onclick="setOnTrack(true)">In pista</button>
+      <button class="btn" onclick="setOnTrack(false)">Ai box</button>
+    </div>
+
+    <div class="row" style="border-top:1px solid var(--line);padding-top:12px;">
+      <span class="mono" style="font-size:12px;">Capienza serbatoio (L)</span>
+    </div>
+    <div class="row"><input type="number" id="tankCapacityInput" placeholder="es. 100"></div>
+    <div class="row"><button class="btn small" style="width:100%" onclick="setTankCapacity()">Imposta capienza</button></div>
+
+    <div class="row" style="border-top:1px solid var(--line);padding-top:12px;">
+      <span class="mono" style="font-size:12px;">Rifornimento</span>
+    </div>
+    <div class="row"><input type="number" id="refuelLitersInput" placeholder="Litri appena riforniti"></div>
+    <div class="row"><button class="btn small" style="width:100%" onclick="doRefuel()">Rifornisci</button></div>
+
+    <div class="row" style="border-top:1px solid var(--line);padding-top:12px;">
+      <span class="mono" id="rateLabel" style="font-size:12px;">Consumo stimato: non ancora impostato</span>
+    </div>
+    <div class="row"><input type="number" id="knownRateLph" placeholder="Consumo (L/ora)" step="0.1"></div>
+    <div class="row"><button class="btn small" style="width:100%" onclick="setKnownRate()">Imposta consumo</button></div>
+    <div class="row"><button class="btn small" style="width:100%" onclick="markDryAndCalibrate()">Calibra: serbatoio a secco ora</button></div>
   </div>
 
   <div class="card">
@@ -321,8 +335,15 @@ const DEFAULT_FLASH = [
 
 let quickButtons = load('pc_qb', DEFAULT_QB);
 let flashPresets = load('pc_flash', DEFAULT_FLASH);
-let fuelStint = { running:false, startedAt:null, startLiters:0, consumptionRatePerMin:null };
-let fuelStintInterval = null;
+let fuelSystem = {
+  tankCapacityLiters: 100,
+  currentLiters: 100,
+  consumptionRatePerHour: null,
+  onTrack: false,
+  sessionStartAt: null,
+  sessionStartLiters: 0,
+};
+let fuelTickInterval = null;
 
 function load(key, fallback){
   try{ const v = JSON.parse(localStorage.getItem(key)); return v || fallback; }catch(e){ return fallback; }
@@ -384,24 +405,23 @@ function connect(serverUrl, joinTimeout){
 function applyState(state){
   if(state.quickButtons) quickButtons = state.quickButtons;
   document.body.classList.toggle('night', !state.dayMode);
-  if($('fuelSlider')) $('fuelSlider').value = state.fuel.percent;
   if($('dayModeToggle')) $('dayModeToggle').checked = !state.dayMode;
-  if(state.fuelStint){ fuelStint = state.fuelStint; }
+  if(state.fuelSystem){ fuelSystem = state.fuelSystem; }
   renderFuel(state.fuel.percent);
   if(state.timing) renderTiming(state.timing);
   renderQuickGrid();
   renderQbEditor();
   renderFlashEditor();
-  renderFuelStintUI();
-  resumeFuelStintTicking();
+  renderFuelSystemUI();
+  resumeFuelTicking();
 }
 
 function registerListeners(){
   socket.on('quickMessageReceived', (m) => addLog(m));
   socket.on('flashMessage', (m) => { if(role==='auto') showFlash(m); });
-  socket.on('fuelUpdate', (f) => { renderFuel(f.percent); if($('fuelSlider')) $('fuelSlider').value = f.percent; if($('fuelValLabel')) $('fuelValLabel').textContent = 'Livello: '+f.percent+'%'; });
-  socket.on('autonomyUpdate', (a) => { if($('autonomyLiveLabel')) $('autonomyLiveLabel').textContent = 'Autonomia stimata: '+a.minutes+' min'; });
-  socket.on('fuelStintUpdate', (fs) => { fuelStint = fs; renderFuelStintUI(); resumeFuelStintTicking(); });
+  socket.on('fuelUpdate', (f) => { renderFuel(f.percent); if($('fuelValLabel')) $('fuelValLabel').textContent = 'Livello: '+f.percent+'%'; });
+  socket.on('autonomyUpdate', (a) => { if($('autonomyLiveLabel')) $('autonomyLiveLabel').textContent = 'Autonomia stimata: '+(a.minutes==null?'—':a.minutes+' min'); });
+  socket.on('fuelSystemUpdate', (fs) => { fuelSystem = fs; renderFuelSystemUI(); resumeFuelTicking(); });
   socket.on('dayModeUpdate', (d) => { document.body.classList.toggle('night', !d.dayMode); if($('dayModeToggle')) $('dayModeToggle').checked = !d.dayMode; });
   socket.on('quickButtonsUpdate', (q) => { quickButtons = q.buttons; renderQuickGrid(); renderQbEditor(); });
   socket.on('timingUpdate', renderTiming);
@@ -481,109 +501,126 @@ function enterBoxView(){
   $('boxCodePill').textContent = code;
   renderQbEditor();
   renderFlashEditor();
-  initFuelStintUI();
+  renderFuelSystemUI();
   setupPushNotifications();
 }
 function sendDayMode(){ socket.emit('dayModeUpdate', { dayMode: !$('dayModeToggle').checked }); }
-function onFuelSlider(){
-  const v = +$('fuelSlider').value;
-  $('fuelValLabel').textContent = 'Livello: '+v+'%';
-  socket.emit('fuelUpdate', { percent: v });
-  if(fuelStint.running){
-    pauseFuelStint();
+
+function renderFuelSystemUI(){
+  const fs = fuelSystem;
+  if($('tankCapacityInput')) $('tankCapacityInput').value = fs.tankCapacityLiters;
+  if($('trackStatusLabel')) $('trackStatusLabel').textContent = 'Stato: ' + (fs.onTrack ? 'in pista' : 'ai box');
+  if($('rateLabel')) $('rateLabel').textContent = fs.consumptionRatePerHour
+    ? 'Consumo stimato: ' + fs.consumptionRatePerHour.toFixed(1) + ' L/ora'
+    : 'Consumo stimato: non ancora impostato';
+  if($('knownRateLph') && fs.consumptionRatePerHour) $('knownRateLph').value = fs.consumptionRatePerHour.toFixed(1);
+  const liveLiters = computeLiveLiters();
+  if($('litersNowLabel')) $('litersNowLabel').textContent = 'Litri in serbatoio: ' + liveLiters.toFixed(1) + ' / ' + fs.tankCapacityLiters + ' L';
+  const pct = fs.tankCapacityLiters > 0 ? Math.round((liveLiters / fs.tankCapacityLiters) * 100) : 0;
+  if($('fuelValLabel')) $('fuelValLabel').textContent = 'Livello: ' + pct + '%';
+  const autonomyMin = fs.consumptionRatePerHour ? (liveLiters / fs.consumptionRatePerHour) * 60 : null;
+  if($('autonomyLiveLabel')) $('autonomyLiveLabel').textContent = 'Autonomia stimata: ' + (autonomyMin==null ? '—' : Math.round(autonomyMin)+' min');
+}
+
+// Litri attuali "in tempo reale": se la macchina è in pista, scala dal momento
+// in cui è uscita (sessionStartAt/sessionStartLiters); se è ai box resta fermo.
+function computeLiveLiters(){
+  const fs = fuelSystem;
+  if(!fs.onTrack || !fs.consumptionRatePerHour || !fs.sessionStartAt) return fs.currentLiters;
+  const elapsedHours = (Date.now() - fs.sessionStartAt) / 3600000;
+  return Math.max(0, fs.sessionStartLiters - elapsedHours * fs.consumptionRatePerHour);
+}
+
+function syncFuelSystem(){ socket.emit('fuelSystemUpdate', fuelSystem); }
+
+function tickFuelSystem(){
+  const liveLiters = computeLiveLiters();
+  const pct = fuelSystem.tankCapacityLiters > 0 ? Math.round((liveLiters / fuelSystem.tankCapacityLiters) * 100) : 0;
+  const autonomyMin = fuelSystem.consumptionRatePerHour ? Math.round((liveLiters / fuelSystem.consumptionRatePerHour) * 60) : null;
+  renderFuelSystemUI();
+  socket.emit('fuelUpdate', { percent: pct });
+  socket.emit('autonomyUpdate', { minutes: autonomyMin });
+  if(liveLiters <= 0){
+    fuelSystem.currentLiters = 0;
+    fuelSystem.onTrack = false;
+    stopFuelTicking();
+    syncFuelSystem();
+  }
+}
+function stopFuelTicking(){ clearInterval(fuelTickInterval); fuelTickInterval = null; }
+function resumeFuelTicking(){
+  stopFuelTicking();
+  if(fuelSystem.onTrack && fuelSystem.consumptionRatePerHour){
+    fuelTickInterval = setInterval(tickFuelSystem, 3000);
+    tickFuelSystem();
+  } else {
+    renderFuelSystemUI();
   }
 }
 
-function initFuelStintUI(){
-  renderFuelStintUI();
+function setTankCapacity(){
+  const cap = +$('tankCapacityInput').value;
+  if(!cap) return;
+  // se la capienza cambia mentre la macchina è ai box, aggiorna anche il livello attuale coerentemente
+  fuelSystem.tankCapacityLiters = cap;
+  syncFuelSystem();
+  renderFuelSystemUI();
 }
-function renderFuelStintUI(){
-  if($('fuelTimerStatus')) $('fuelTimerStatus').textContent = 'Stint: ' + (fuelStint.running ? 'in corso' : 'fermo');
-  if($('rateLabel')) $('rateLabel').textContent = fuelStint.consumptionRatePerMin
-    ? 'Consumo stimato: ' + fuelStint.consumptionRatePerMin.toFixed(2) + ' L/min (' + (fuelStint.consumptionRatePerMin*60).toFixed(1) + ' L/ora)'
-    : 'Consumo stimato: non ancora calibrato (si calcola al primo "a secco")';
-  if($('knownRateLph') && fuelStint.consumptionRatePerMin) $('knownRateLph').value = (fuelStint.consumptionRatePerMin*60).toFixed(1);
-  if($('stintLiters') && fuelStint.startLiters) $('stintLiters').value = fuelStint.startLiters;
+
+function doRefuel(){
+  const added = +$('refuelLitersInput').value;
+  if(!added) return;
+  const before = computeLiveLiters();
+  fuelSystem.currentLiters = Math.min(fuelSystem.tankCapacityLiters, before + added);
+  fuelSystem.onTrack = false; // il rifornimento avviene sempre a macchina ferma ai box
+  fuelSystem.sessionStartAt = null;
+  stopFuelTicking();
+  syncFuelSystem();
+  renderFuelSystemUI();
+  $('refuelLitersInput').value = '';
 }
-function syncFuelStint(){
-  socket.emit('fuelStintUpdate', fuelStint);
-}
-function computeStintNow(){
-  if(!fuelStint.running || !fuelStint.consumptionRatePerMin || !fuelStint.startedAt) return null;
-  const elapsedMin = (Date.now() - fuelStint.startedAt) / 60000;
-  const litersRemaining = Math.max(0, fuelStint.startLiters - elapsedMin * fuelStint.consumptionRatePerMin);
-  const autonomyMin = fuelStint.consumptionRatePerMin > 0 ? litersRemaining / fuelStint.consumptionRatePerMin : 0;
-  const percent = fuelStint.startLiters > 0 ? Math.round((litersRemaining / fuelStint.startLiters) * 100) : 0;
-  return { litersRemaining, autonomyMin, percent };
-}
-function tickFuelStint(){
-  const c = computeStintNow();
-  if(!c) return;
-  if($('litersRemainingLabel')) $('litersRemainingLabel').textContent = 'Litri stimati rimanenti: ' + c.litersRemaining.toFixed(1) + ' L';
-  if($('autonomyLiveLabel')) $('autonomyLiveLabel').textContent = 'Autonomia stimata: ' + Math.round(c.autonomyMin) + ' min';
-  if($('fuelSlider')) $('fuelSlider').value = c.percent;
-  if($('fuelValLabel')) $('fuelValLabel').textContent = 'Livello: ' + c.percent + '%';
-  socket.emit('fuelUpdate', { percent: c.percent });
-  socket.emit('autonomyUpdate', { minutes: Math.round(c.autonomyMin) });
-  if(c.litersRemaining <= 0) stopFuelStintTicking();
-}
-function stopFuelStintTicking(){
-  clearInterval(fuelStintInterval);
-  fuelStintInterval = null;
-}
-function resumeFuelStintTicking(){
-  stopFuelStintTicking();
-  if(fuelStint.running && fuelStint.consumptionRatePerMin){
-    fuelStintInterval = setInterval(tickFuelStint, 3000);
-    tickFuelStint();
-  }
-}
+
 function setKnownRate(){
   const lph = +$('knownRateLph').value;
   if(!lph){
     if($('rateLabel')) $('rateLabel').textContent = 'Inserisci un consumo valido (L/ora)';
     return;
   }
-  fuelStint.consumptionRatePerMin = lph / 60;
-  renderFuelStintUI();
-  syncFuelStint();
-  if(fuelStint.running) resumeFuelStintTicking();
+  fuelSystem.consumptionRatePerHour = lph;
+  syncFuelSystem();
+  resumeFuelTicking();
 }
-function startFuelStint(){
-  const liters = +$('stintLiters').value;
-  if(!liters){
-    if($('rateLabel')) $('rateLabel').textContent = 'Inserisci prima i litri nel serbatoio';
-    return;
+
+function setOnTrack(goingOnTrack){
+  if(goingOnTrack){
+    fuelSystem.currentLiters = computeLiveLiters(); // consolida il valore prima di ripartire
+    fuelSystem.onTrack = true;
+    fuelSystem.sessionStartAt = Date.now();
+    fuelSystem.sessionStartLiters = fuelSystem.currentLiters;
+  } else {
+    fuelSystem.currentLiters = computeLiveLiters(); // congela il valore corrente
+    fuelSystem.onTrack = false;
+    fuelSystem.sessionStartAt = null;
   }
-  fuelStint.startLiters = liters;
-  fuelStint.startedAt = Date.now();
-  fuelStint.running = true;
-  renderFuelStintUI();
-  syncFuelStint();
-  resumeFuelStintTicking();
+  syncFuelSystem();
+  resumeFuelTicking();
 }
-function pauseFuelStint(){
-  fuelStint.running = false;
-  stopFuelStintTicking();
-  renderFuelStintUI();
-  syncFuelStint();
-}
+
 function markDryAndCalibrate(){
-  if(!fuelStint.startedAt){
-    if($('rateLabel')) $('rateLabel').textContent = 'Avvia prima uno stint per poterlo calibrare';
+  if(!fuelSystem.onTrack || !fuelSystem.sessionStartAt){
+    if($('rateLabel')) $('rateLabel').textContent = 'Metti prima la macchina "in pista" per poter calibrare';
     return;
   }
-  const elapsedMin = (Date.now() - fuelStint.startedAt) / 60000;
-  fuelStint.consumptionRatePerMin = elapsedMin > 0 ? fuelStint.startLiters / elapsedMin : null;
-  fuelStint.running = false;
-  fuelStint.startedAt = null;
-  stopFuelStintTicking();
-  renderFuelStintUI();
-  syncFuelStint();
+  const elapsedHours = (Date.now() - fuelSystem.sessionStartAt) / 3600000;
+  fuelSystem.consumptionRatePerHour = elapsedHours > 0 ? fuelSystem.sessionStartLiters / elapsedHours : null;
+  fuelSystem.currentLiters = 0;
+  fuelSystem.onTrack = false;
+  fuelSystem.sessionStartAt = null;
+  stopFuelTicking();
+  syncFuelSystem();
+  renderFuelSystemUI();
   socket.emit('fuelUpdate', { percent: 0 });
   socket.emit('autonomyUpdate', { minutes: 0 });
-  if($('litersRemainingLabel')) $('litersRemainingLabel').textContent = 'Litri stimati rimanenti: 0.0 L';
-  if($('autonomyLiveLabel')) $('autonomyLiveLabel').textContent = 'Autonomia stimata: 0 min';
 }
 function sendTiming(){
   socket.emit('timingUpdate', {
