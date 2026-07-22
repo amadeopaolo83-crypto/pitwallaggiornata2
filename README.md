@@ -22,7 +22,26 @@ Il modulo che estrae i distacchi da un sito di timing di terzi non è collegato:
 
 Nel frattempo la funzione è già utilizzabile: nella vista box c'è un campo per inserire manualmente posizione e distacco, che arriva subito all'auto. Quando saprete il sito esatto, si aggiunge un piccolo servizio che legge quella pagina e chiama automaticamente lo stesso evento (`timingUpdate`) già cablato lato server e client — non serve toccare il resto dell'app.
 
-## Note tecniche
+## Notifiche push (nuovo)
+Quando dal box è aperta la pagina, alla prima apertura il browser chiede il permesso di inviare notifiche: bisogna toccare **Consenti**. Da quel momento, ogni messaggio inviato dall'auto arriva come notifica del telefono — **anche a schermo spento o con l'app in background** — su tutti i telefoni del box che hanno dato il permesso, con vibrazione. Se l'app è aperta in primo piano, invece del banner di sistema si sente anche un breve beep.
+
+Limiti da sapere:
+- **Android (Chrome)**: funziona bene, anche a schermo spento, finché il telefono ha batteria e connessione.
+- **iPhone (Safari)**: le notifiche push funzionano solo se l'app è stata installata con "Aggiungi a Home" (non nel semplice browser) e serve iOS 16.4 o superiore. È comunque meno affidabile di Android in background.
+- Il permesso notifiche va dato **per ogni telefono** che userete come box: se sostituite un telefono o cancellate i dati del browser, va rifatto.
+
+Le chiavi di sicurezza per le notifiche (VAPID) sono già incluse nel codice per farlo funzionare subito. Per maggiore sicurezza in futuro si possono spostare come variabili d'ambiente su Render (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`) invece che nel codice — non è obbligatorio per far funzionare tutto.
+
+## Timer di consumo carburante (nuovo)
+Nella vista box, sotto ad "Autonomia", c'è ora:
+- **Durata pieno (min)**: quanti minuti dura un pieno di carburante
+- **Avvia consumo**: la barra in auto comincia a scendere da sola, in tempo reale
+- **Pausa**: ferma la discesa automatica al valore attuale
+- **Rifornito (100%)**: da usare dopo ogni pit-stop, riporta il livello al massimo e ferma il timer
+
+Muovere manualmente lo slider del carburante mette automaticamente in pausa il conteggio, per evitare che i due si contraddicano.
+
+
 - **Consumo carburante**: inserito manualmente dal box con uno slider; la barra in auto cambia colore automaticamente dal verde al rosso in base alla percentuale.
 - **Pulsanti rapidi auto**: i 4 pulsanti (default: Box, Rifornimento, Pilota, Ripeti) sono modificabili — testo e colore — dalla vista box, sezione "Pulsanti rapidi auto".
 - **Messaggi a schermo intero**: nella vista box si possono creare più preset (testo, colore, durata) e inviarli con un tap; in auto compaiono a schermo intero e il testo viene letto ad alta voce.
