@@ -156,9 +156,10 @@
     <input id="teamCode" maxlength="8" placeholder="ES. GARA24" autocomplete="off" autocapitalize="characters" />
   </div>
   <div class="role-row">
-    <button class="role-btn box" onclick="joinAs('box')">Box<small>controllo &amp; impostazioni</small></button>
-    <button class="role-btn auto" onclick="joinAs('auto')">Auto<small>schermo in pista</small></button>
+    <button class="role-btn box" id="btnBox" onclick="joinAs('box')">Box<small>controllo &amp; impostazioni</small></button>
+    <button class="role-btn auto" id="btnAuto" onclick="joinAs('auto')">Auto<small>schermo in pista</small></button>
   </div>
+  <div id="landingStatus" style="min-height:20px;font-size:13px;color:var(--muted);"></div>
   <details>
     <summary>Server</summary>
     <input id="serverUrl" placeholder="https://tuo-server.com" value="https://pitwallaggiornata2.onrender.com" />
@@ -325,27 +326,53 @@ function load(key, fallback){
 function save(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
 
 // ---------- JOIN ----------
+function setLandingStatus(msg, isError){
+  const el = $('landingStatus');
+  if(!el) return;
+  el.textContent = msg || '';
+  el.style.color = isError ? 'var(--red)' : 'var(--muted)';
+}
+
 function joinAs(chosenRole){
   const codeVal = $('teamCode').value.trim().toUpperCase();
-  if(!codeVal){ $('teamCode').focus(); return; }
+  if(!codeVal){
+    setLandingStatus('Inserisci prima il codice team', true);
+    $('teamCode').focus();
+    return;
+  }
   code = codeVal;
   role = chosenRole;
   const serverUrl = $('serverUrl').value.trim() || DEFAULT_SERVER_URL;
   localStorage.setItem('pc_code', code);
   localStorage.setItem('pc_role', role);
   localStorage.setItem('pc_server', serverUrl);
-  connect(serverUrl);
+  $('btnBox').disabled = true; $('btnAuto').disabled = true;
+  setLandingStatus('Connessione al server in corso…');
+  const joinTimeout = setTimeout(() => {
+    setLandingStatus('Il server ci sta mettendo più del solito (potrebbe essersi "addormentato"): attendi ancora qualche secondo…');
+  }, 8000);
+  connect(serverUrl, joinTimeout);
 }
 
-function connect(serverUrl){
+function connect(serverUrl, joinTimeout){
   socket = io(serverUrl, { transports:['websocket','polling'] });
   socket.on('connect', () => {
     socket.emit('join', { code, role }, (res) => {
-      if(!res || !res.ok) return;
+      clearTimeout(joinTimeout);
+      if(!res || !res.ok){
+        setLandingStatus('Errore durante il collegamento, riprova.', true);
+        $('btnBox').disabled = false; $('btnAuto').disabled = false;
+        return;
+      }
+      setLandingStatus('');
       applyState(res.state);
       $('landing').hidden = true;
       if(role === 'auto') enterAutoView(); else enterBoxView();
     });
+  });
+  socket.on('connect_error', () => {
+    setLandingStatus('Impossibile raggiungere il server. Controlla la connessione e riprova.', true);
+    $('btnBox').disabled = false; $('btnAuto').disabled = false;
   });
   registerListeners();
 }
