@@ -161,7 +161,7 @@
   </div>
   <details>
     <summary>Server</summary>
-    <input id="serverUrl" placeholder="https://tuo-server.com" />
+    <input id="serverUrl" placeholder="https://tuo-server.com" value="https://pitwallaggiornata2.onrender.com" />
   </details>
 </div>
 
@@ -249,6 +249,7 @@
 </div>
 
 <script>
+const DEFAULT_SERVER_URL = 'https://pitwallaggiornata2.onrender.com';
 const $ = id => document.getElementById(id);
 let socket, code, role;
 let wakeLockRef = null;
@@ -329,7 +330,7 @@ function joinAs(chosenRole){
   if(!codeVal){ $('teamCode').focus(); return; }
   code = codeVal;
   role = chosenRole;
-  const serverUrl = $('serverUrl').value.trim() || location.origin;
+  const serverUrl = $('serverUrl').value.trim() || DEFAULT_SERVER_URL;
   localStorage.setItem('pc_code', code);
   localStorage.setItem('pc_role', role);
   localStorage.setItem('pc_server', serverUrl);
