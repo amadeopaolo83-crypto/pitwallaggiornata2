@@ -228,6 +228,12 @@
     <div class="row"><button class="btn small" style="width:100%" onclick="setTankCapacity()">Imposta capienza</button></div>
 
     <div class="row" style="border-top:1px solid var(--line);padding-top:12px;">
+      <span class="mono" style="font-size:12px;">Livello di partenza (se non è pieno)</span>
+    </div>
+    <div class="row"><input type="number" id="startingLitersInput" placeholder="Litri attualmente presenti"></div>
+    <div class="row"><button class="btn small" style="width:100%" onclick="setStartingLiters()">Imposta livello attuale</button></div>
+
+    <div class="row" style="border-top:1px solid var(--line);padding-top:12px;">
       <span class="mono" style="font-size:12px;">Rifornimento</span>
     </div>
     <div class="row"><input type="number" id="refuelLitersInput" placeholder="Litri appena riforniti"></div>
@@ -561,8 +567,21 @@ function resumeFuelTicking(){
 function setTankCapacity(){
   const cap = +$('tankCapacityInput').value;
   if(!cap) return;
-  // se la capienza cambia mentre la macchina è ai box, aggiorna anche il livello attuale coerentemente
   fuelSystem.tankCapacityLiters = cap;
+  // i litri attuali non possono mai superare la nuova capienza
+  fuelSystem.currentLiters = Math.min(fuelSystem.currentLiters, cap);
+  if(fuelSystem.sessionStartLiters) fuelSystem.sessionStartLiters = Math.min(fuelSystem.sessionStartLiters, cap);
+  syncFuelSystem();
+  renderFuelSystemUI();
+}
+
+function setStartingLiters(){
+  const liters = +$('startingLitersInput').value;
+  if(liters === 0 || isNaN(liters) || $('startingLitersInput').value === '') return;
+  fuelSystem.currentLiters = Math.min(liters, fuelSystem.tankCapacityLiters);
+  fuelSystem.onTrack = false;
+  fuelSystem.sessionStartAt = null;
+  stopFuelTicking();
   syncFuelSystem();
   renderFuelSystemUI();
 }
