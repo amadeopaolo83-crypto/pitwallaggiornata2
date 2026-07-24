@@ -138,9 +138,10 @@
   .qb-row{display:grid;grid-template-columns:1fr 44px;gap:8px;margin-bottom:8px;align-items:center;}
   .flash-row{display:grid;grid-template-columns:1fr 44px 60px auto;gap:8px;margin-bottom:8px;align-items:center;}
   .flash-row input[type=number]{width:60px;}
-  .btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 14px;font-size:13px;}
+  .btn{background:var(--panel-2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 14px;font-size:13px;transition:background .15s,color .15s,border-color .15s;}
   .btn.primary{background:var(--yellow);color:#0B0D0F;border-color:var(--yellow);font-weight:600;}
   .btn.small{padding:8px 10px;font-size:12px;}
+  .btn.sent-confirm{background:var(--green)!important;color:#0B0D0F!important;border-color:var(--green)!important;}
   #log{max-height:200px;overflow-y:auto;display:flex;flex-direction:column-reverse;gap:6px;}
   .log-item{font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--panel-2);border-radius:8px;padding:8px 10px;display:flex;justify-content:space-between;}
   .log-item .t{color:var(--muted);}
@@ -252,7 +253,7 @@
     <div class="row"><input type="number" id="timingPosInput" placeholder="Posizione"></div>
     <div class="row"><input type="text" id="timingGapAheadInput" placeholder="Distacco dal davanti es. +1.2s"></div>
     <div class="row"><input type="text" id="timingGapBehindInput" placeholder="Distacco dal dietro es. -0.8s"></div>
-    <div class="row"><button class="btn primary" style="width:100%" onclick="sendTiming()">Invia distacchi all'auto</button></div>
+    <div class="row"><button class="btn primary" style="width:100%" onclick="sendTiming(this)">Invia distacchi all'auto</button></div>
   </div>
 
   <div class="card">
@@ -528,8 +529,6 @@ function renderFuelSystemUI(){
   if($('autonomyLiveLabel')) $('autonomyLiveLabel').textContent = 'Autonomia stimata: ' + (autonomyMin==null ? '—' : Math.round(autonomyMin)+' min');
 }
 
-// Litri attuali "in tempo reale": se la macchina è in pista, scala dal momento
-// in cui è uscita (sessionStartAt/sessionStartLiters); se è ai box resta fermo.
 function computeLiveLiters(){
   const fs = fuelSystem;
   if(!fs.onTrack || !fs.consumptionRatePerHour || !fs.sessionStartAt) return fs.currentLiters;
@@ -568,7 +567,6 @@ function setTankCapacity(){
   const cap = +$('tankCapacityInput').value;
   if(!cap) return;
   fuelSystem.tankCapacityLiters = cap;
-  // i litri attuali non possono mai superare la nuova capienza
   fuelSystem.currentLiters = Math.min(fuelSystem.currentLiters, cap);
   if(fuelSystem.sessionStartLiters) fuelSystem.sessionStartLiters = Math.min(fuelSystem.sessionStartLiters, cap);
   syncFuelSystem();
@@ -591,7 +589,7 @@ function doRefuel(){
   if(!added) return;
   const before = computeLiveLiters();
   fuelSystem.currentLiters = Math.min(fuelSystem.tankCapacityLiters, before + added);
-  fuelSystem.onTrack = false; // il rifornimento avviene sempre a macchina ferma ai box
+  fuelSystem.onTrack = false;
   fuelSystem.sessionStartAt = null;
   stopFuelTicking();
   syncFuelSystem();
@@ -612,12 +610,12 @@ function setKnownRate(){
 
 function setOnTrack(goingOnTrack){
   if(goingOnTrack){
-    fuelSystem.currentLiters = computeLiveLiters(); // consolida il valore prima di ripartire
+    fuelSystem.currentLiters = computeLiveLiters();
     fuelSystem.onTrack = true;
     fuelSystem.sessionStartAt = Date.now();
     fuelSystem.sessionStartLiters = fuelSystem.currentLiters;
   } else {
-    fuelSystem.currentLiters = computeLiveLiters(); // congela il valore corrente
+    fuelSystem.currentLiters = computeLiveLiters();
     fuelSystem.onTrack = false;
     fuelSystem.sessionStartAt = null;
   }
@@ -641,12 +639,24 @@ function markDryAndCalibrate(){
   socket.emit('fuelUpdate', { percent: 0 });
   socket.emit('autonomyUpdate', { minutes: 0 });
 }
-function sendTiming(){
+function flashConfirm(btnEl){
+  if(!btnEl) return;
+  const originalText = btnEl.textContent;
+  btnEl.classList.add('sent-confirm');
+  btnEl.textContent = 'Inviato ✓';
+  setTimeout(() => {
+    btnEl.classList.remove('sent-confirm');
+    btnEl.textContent = originalText;
+  }, 1200);
+}
+
+function sendTiming(btnEl){
   socket.emit('timingUpdate', {
     position: $('timingPosInput').value ? +$('timingPosInput').value : null,
     gapAhead: $('timingGapAheadInput').value,
     gapBehind: $('timingGapBehindInput').value,
   });
+  flashConfirm(btnEl);
 }
 
 function renderQbEditor(){
@@ -678,7 +688,7 @@ function renderFlashEditor(){
       <input type="text" value="${p.text}" oninput="flashPresets[${i}].text=this.value">
       <input type="color" value="${p.color}" oninput="flashPresets[${i}].color=this.value">
       <input type="number" value="${p.duration}" min="2" max="60" oninput="flashPresets[${i}].duration=+this.value" title="secondi">
-      <button class="btn small primary" onclick="sendFlashPreset(${i})">Invia</button>`;
+      <button class="btn small primary" onclick="sendFlashPreset(${i}, this)">Invia</button>`;
     el.appendChild(row);
   });
 }
@@ -687,10 +697,11 @@ function addFlashPreset(){
   save('pc_flash', flashPresets);
   renderFlashEditor();
 }
-function sendFlashPreset(i){
+function sendFlashPreset(i, btnEl){
   save('pc_flash', flashPresets);
   const p = flashPresets[i];
   socket.emit('flashMessage', { text: p.text, color: p.color, durationSeconds: p.duration });
+  flashConfirm(btnEl);
 }
 
 function addLog(m){
