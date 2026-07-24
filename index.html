@@ -271,6 +271,7 @@
   <div class="card">
     <h3>Messaggi ricevuti dall'auto</h3>
     <div id="log"></div>
+    <button class="btn small" style="margin-top:10px;" onclick="clearLog()">Cancella cronologia</button>
   </div>
 </div>
 
@@ -712,8 +713,15 @@ function addLog(m){
   const time = new Date(m.at).toLocaleTimeString('it-IT');
   div.innerHTML = `<span>${m.label}</span><span class="t">${time}</span>`;
   log.prepend(div);
+  while(log.children.length > 5){
+    log.removeChild(log.lastElementChild);
+  }
   if(navigator.vibrate) navigator.vibrate([40,40,40]);
   playAlertBeep();
+}
+function clearLog(){
+  const log = $('log');
+  if(log) log.innerHTML = '';
 }
 
 function resetRole(){
